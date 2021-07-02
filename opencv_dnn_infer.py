@@ -6,10 +6,24 @@ from utils.anchor_decode import decode_bbox
 from utils.nms import single_class_non_max_suppression
 from PIL import Image, ImageDraw, ImageFont
 
+import time
+
 # anchor configuration
 feature_map_sizes = [[33, 33], [17, 17], [9, 9], [5, 5], [3, 3]]
 anchor_sizes = [[0.04, 0.056], [0.08, 0.11], [0.16, 0.22], [0.32, 0.45], [0.64, 0.72]]
 anchor_ratios = [[1, 0.62, 0.42]] * 5
+
+# used to record the time when we processed last frame
+start_time = 0
+
+# used to record the time at which we processed current frame
+end_time = 0
+
+#Calculate and store FPS
+fps = 0
+real_fps = 0
+num_frames = 10
+index = 0
 
 # generate anchors
 anchors = generate_anchors(feature_map_sizes, anchor_sizes, anchor_ratios)
@@ -40,7 +54,7 @@ def getOutputsNames(net):
     # Get the names of the output layers, i.e. the layers with unconnected outputs
     return [layersNames[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
-def inference(net, image, conf_thresh=0.5, iou_thresh=0.4, target_shape=(160, 160), draw_result=True, chinese=True):
+def inference(net, image, conf_thresh=0.5, iou_thresh=0.4, target_shape=(160, 160), draw_result=True, chinese=False):
     height, width, _ = image.shape
     blob = cv2.dnn.blobFromImage(image, scalefactor=1/255.0, size=target_shape)
     net.setInput(blob)
@@ -70,7 +84,8 @@ def inference(net, image, conf_thresh=0.5, iou_thresh=0.4, target_shape=(160, 16
             if chinese:
                 image = puttext_chinese(image, id2chiclass[class_id], (xmin, ymin), colors[class_id])  ###puttext_chinese
             else:
-                cv2.putText(image, "%s: %.2f" % (id2class[class_id], conf), (xmin + 2, ymin - 2),
+                text = "%s: %.2f, FPS: %.2f" % (id2class[class_id], conf, real_fps)
+                cv2.putText(image, text, (xmin + 2, ymin - 2),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, colors[class_id])
     return image
 
@@ -85,6 +100,20 @@ def run_on_video(Net, video_path, conf_thresh=0.5):
         if not status:
             print("Done processing !!!")
             break
+
+        global fps
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        #print("Frames per second using video.get(cv2.CAP_PROP_FPS) : {0}".format(fps))  
+        global real_fps, num_frames, index, start_time, end_time
+        index += 1
+        if(index >= num_frames):
+            index = 0
+            end_time = time.time()
+            seconds = end_time - start_time
+            start_time = end_time
+            real_fps = num_frames/seconds
+            #print("Real frames per second after calculated FaceMask : {0}".format(real_fps))
+
         img_raw = cv2.cvtColor(img_raw, cv2.COLOR_BGR2RGB)
         img_raw = inference(Net, img_raw, target_shape=(260, 260), conf_thresh=conf_thresh)
         cv2.imshow('image', img_raw[:,:,::-1])
@@ -95,7 +124,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Face Mask Detection")
     parser.add_argument('--proto', type=str, default='models/face_mask_detection.prototxt', help='prototxt path')
     parser.add_argument('--model', type=str, default='models/face_mask_detection.caffemodel', help='model path')
-    parser.add_argument('--img-mode', type=int, default=1, help='set 1 to run on image, 0 to run on video.')
+    parser.add_argument('--img-mode', type=int, default=0, help='set 1 to run on image, 0 to run on video.')
     parser.add_argument('--img-path', type=str, default='img/demo2.jpg', help='path to your image.')
     parser.add_argument('--video-path', type=str, default='0', help='path to your video, `0` means to use camera.')
     # parser.add_argument('--hdf5', type=str, help='keras hdf5 file')
